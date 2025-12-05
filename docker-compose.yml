@@ -30,7 +30,9 @@ services:
     env_file:
       - .env.local
     ports:
-      - "${PORT:-3100}:3100"
+      # Map host port to the same port the service listens on inside the container.
+      # Uses variable substitution; ensure `PORT` is defined in your shell or in a .env file.
+      - "${PORT:-3100}:${PORT:-3100}"
     depends_on:
       - postgres
       - minio

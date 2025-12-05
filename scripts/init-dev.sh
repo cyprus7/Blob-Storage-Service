@@ -52,19 +52,31 @@ done
 echo "\n[init-dev] Postgres is ready"
 
 echo "[init-dev] Waiting for MinIO to be responsive..."
-# Try to contact MinIO API from within the network using aws-cli or curl via alpine container
+# Prefer to exec into the minio container and query its local health endpoint.
+MINIO_CONTAINER=$(docker compose ps -q minio)
+if [ -z "$MINIO_CONTAINER" ]; then
+  echo "[init-dev] ERROR: minio container not found" >&2
+  exit 1
+fi
+
 MAX_RETRIES=60
 count=0
-while ! docker run --rm --network "$NETWORK" curlimages/curl:7.88.1 -sSf "${S3_ENDPOINT%/}/minio/health/ready" >/dev/null 2>&1; do
+while true; do
+  if docker exec "$MINIO_CONTAINER" sh -c "curl -sS ${S3_ENDPOINT%/}/minio/health/ready >/dev/null 2>&1"; then
+    echo "\n[init-dev] MinIO is ready"
+    break
+  fi
   count=$((count+1))
   if [ $count -ge $MAX_RETRIES ]; then
     echo "[init-dev] ERROR: MinIO did not become ready in time" >&2
+    # print recent minio logs
+    echo "[init-dev] Recent MinIO logs:"
+    docker compose logs --no-color --tail=50 minio || true
     exit 1
   fi
   printf '.'
   sleep 1
 done
-echo "\n[init-dev] MinIO is ready"
 
 echo "[init-dev] Creating S3 bucket '$S3_BUCKET' (idempotent)"
 docker run --rm --network "$NETWORK" -e AWS_ACCESS_KEY_ID="$S3_ACCESS_KEY" -e AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY" amazon/aws-cli:latest s3api create-bucket --bucket "$S3_BUCKET" --endpoint-url "$S3_ENDPOINT" --region "$S3_REGION" || true
