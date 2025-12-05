@@ -9,8 +9,9 @@
     "build": "nest build",
     "migrate:blob": "drizzle-kit migrate --config ./drizzle.blob.config.ts",
     "lint": "eslint \"src/**/*.ts\" --ignore-pattern \"src/**/__tests__/**\"",
-    "test": "jest --maxWorkers=50%",
-    "test:parallel": "jest --maxWorkers=75%"
+    "test": "jest --maxWorkers=50% --testPathIgnorePatterns \"src/__tests__/e2e/\"",
+    "test:parallel": "jest --maxWorkers=75% --testPathIgnorePatterns \"src/__tests__/e2e/\"",
+    "test:e2e": "jest \"src/__tests__/e2e\" --runInBand --testTimeout=20000"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.679.0",

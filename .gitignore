@@ -29,6 +29,9 @@ out-tsc/
 .env
 .env.*.local
 
+# Local env for docker-compose (do not commit)
+.env.local
+
 # Coverage
 coverage/
 coverage-final.json
