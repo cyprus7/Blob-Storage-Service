@@ -20,7 +20,7 @@ describe('GetBlobContentUseCase', () => {
 
         const repoMock = {
             findById: jest.fn().mockResolvedValue(entity),
-            update: jest.fn().mockImplementation(async (e: any) => e),
+            touchActive: jest.fn().mockResolvedValue(entity),
         } as any
 
         const stream = new Readable()
@@ -35,8 +35,8 @@ describe('GetBlobContentUseCase', () => {
 
         const result = await usecase.execute(props.id)
 
+        expect(repoMock.touchActive).toHaveBeenCalledWith(props.id)
         expect(repoMock.findById).toHaveBeenCalledWith(props.id)
-        expect(repoMock.update).toHaveBeenCalled()
         expect(storageMock.getObjectStream).toHaveBeenCalledWith(props.storageKey)
         expect(result.info.id).toBe(props.id)
         expect(result.stream).toBe(stream)

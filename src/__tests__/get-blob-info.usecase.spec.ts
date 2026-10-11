@@ -15,19 +15,17 @@ describe('GetBlobInfoUseCase', () => {
             deletedAt: null,
         }
 
-        const entity = new BlobEntity({ ...props })
+        const entity = new BlobEntity({ ...props, lastUsedAt: new Date() })
 
         const repoMock = {
-            findById: jest.fn().mockResolvedValue(entity),
-            update: jest.fn().mockImplementation(async (e: any) => e),
+            touchActive: jest.fn().mockResolvedValue(entity),
         } as any
 
         const usecase = new GetBlobInfoUseCase(repoMock)
 
         const dto = await usecase.execute(props.id)
 
-        expect(repoMock.findById).toHaveBeenCalledWith(props.id)
-        expect(repoMock.update).toHaveBeenCalled()
+        expect(repoMock.touchActive).toHaveBeenCalledWith(props.id)
         expect(dto.id).toBe(props.id)
         expect(dto.hash).toBe(props.hash)
         expect(dto.size).toBe(props.size)
@@ -36,7 +34,7 @@ describe('GetBlobInfoUseCase', () => {
     })
 
     it('throws NotFoundException when blob not found', async () => {
-        const repoMock = { findById: jest.fn().mockResolvedValue(null) } as any
+        const repoMock = { touchActive: jest.fn().mockResolvedValue(null) } as any
         const usecase = new GetBlobInfoUseCase(repoMock)
 
         await expect(usecase.execute('missing')).rejects.toThrow(NotFoundException)
@@ -53,9 +51,7 @@ describe('GetBlobInfoUseCase', () => {
             lastUsedAt: null,
             deletedAt: new Date(),
         }
-        const entity = new BlobEntity({ ...props })
-
-        const repoMock = { findById: jest.fn().mockResolvedValue(entity) } as any
+        const repoMock = { touchActive: jest.fn().mockResolvedValue(null) } as any
         const usecase = new GetBlobInfoUseCase(repoMock)
 
         await expect(usecase.execute(props.id)).rejects.toThrow(NotFoundException)

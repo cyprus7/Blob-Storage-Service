@@ -9,6 +9,7 @@ import { BlobRepository } from './domain/ports/blob.repository'
 import { S3BlobStorageAdapter } from './infrastructure/storage/s3-blob-storage.adapter'
 import { DrizzleBlobRepository } from './infrastructure/persistence/drizzle/blob.repository.drizzle'
 import { ApiKeyGuard } from './interface/http/api-key.guard'
+import { UploadCapacityGuard } from './interface/http/upload-capacity.guard'
 
 @Module({
     controllers: [BlobController],
@@ -18,6 +19,7 @@ import { ApiKeyGuard } from './interface/http/api-key.guard'
         GetBlobContentUseCase,
         DeleteBlobUseCase,
         ApiKeyGuard,
+        UploadCapacityGuard,
         {
             provide: BlobStoragePort,
             useClass: S3BlobStorageAdapter,
@@ -27,5 +29,6 @@ import { ApiKeyGuard } from './interface/http/api-key.guard'
             useClass: DrizzleBlobRepository,
         },
     ],
+    exports: [BlobStoragePort],
 })
 export class BlobModule {}

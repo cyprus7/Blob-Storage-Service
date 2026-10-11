@@ -8,15 +8,11 @@ export class GetBlobInfoUseCase {
     constructor(private readonly repo: BlobRepository) {}
 
     async execute(id: string): Promise<BlobInfo> {
-        const entity = await this.repo.findById(id)
-        if (!entity || entity.isDeleted()) {
+        const entity = await this.repo.touchActive(id)
+        if (!entity) {
             throw new NotFoundException('Blob not found')
         }
-
-        entity.markUsed()
-        const updated = await this.repo.update(entity)
-
-        return this.toDto(updated)
+        return this.toDto(entity)
     }
 
     private toDto(entity: BlobEntity): BlobInfo {

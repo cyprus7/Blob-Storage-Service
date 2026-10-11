@@ -1,58 +1,26 @@
 import { DeleteBlobUseCase } from '../application/use-cases/delete-blob.usecase'
 import { BlobEntity } from '../domain/blob.entity'
 
-describe('DeleteBlobUseCase (negative cases)', () => {
-    it('propagates error when storage.deleteObject fails on hard delete', async () => {
-        const props = {
-            id: 'dneg1',
-            hash: 'hdneg',
-            size: 7,
-            mime: 'image/png',
-            storageKey: 'objects/dneg1',
-            createdAt: new Date(),
-            lastUsedAt: null,
-            deletedAt: null,
-        }
+const entity = new BlobEntity({
+    id: 'v2', hash: 'hash', size: 7, mime: 'image/png', storageKey: 'objects/shared',
+    createdAt: new Date(), lastUsedAt: null, deletedAt: null, generation: 2,
+})
 
-        const entity = new BlobEntity({ ...props })
-
-        const repoMock = {
+describe('DeleteBlobUseCase failures', () => {
+    it('propagates a hard-delete database failure without touching S3', async () => {
+        const repo = {
             findById: jest.fn().mockResolvedValue(entity),
-            delete: jest.fn().mockResolvedValue(undefined),
+            hardDeleteLogical: jest.fn().mockRejectedValue(new Error('delete failed')),
         } as any
-
-        const storageMock = { deleteObject: jest.fn().mockRejectedValue(new Error('delete failed')) } as any
-
-        const usecase = new DeleteBlobUseCase(repoMock, storageMock)
-
-        await expect(usecase.execute(props.id, true)).rejects.toThrow('delete failed')
-        expect(storageMock.deleteObject).toHaveBeenCalledWith(props.storageKey)
+        await expect(new DeleteBlobUseCase(repo).execute(entity.id, true)).rejects.toThrow('delete failed')
+        expect(repo.hardDeleteLogical).toHaveBeenCalledWith(entity.id)
     })
 
-    it('propagates error when repo.update fails during soft delete', async () => {
-        const props = {
-            id: 'dneg2',
-            hash: 'hdneg2',
-            size: 9,
-            mime: 'text/plain',
-            storageKey: 'objects/dneg2',
-            createdAt: new Date(),
-            lastUsedAt: null,
-            deletedAt: null,
-        }
-
-        const entity = new BlobEntity({ ...props })
-
-        const repoMock = {
+    it('propagates a soft-delete database failure', async () => {
+        const repo = {
             findById: jest.fn().mockResolvedValue(entity),
-            update: jest.fn().mockRejectedValue(new Error('update failed')),
+            softDeleteLogical: jest.fn().mockRejectedValue(new Error('update failed')),
         } as any
-
-        const storageMock = { deleteObject: jest.fn() } as any
-
-        const usecase = new DeleteBlobUseCase(repoMock, storageMock)
-
-        await expect(usecase.execute(props.id, false)).rejects.toThrow('update failed')
-        expect(repoMock.update).toHaveBeenCalled()
+        await expect(new DeleteBlobUseCase(repo).execute(entity.id, false)).rejects.toThrow('update failed')
     })
 })

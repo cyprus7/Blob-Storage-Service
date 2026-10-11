@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3'
 import { BlobStoragePort } from '../../domain/ports/blob-storage.port'
 import { Readable } from 'stream'
 
@@ -24,17 +24,13 @@ export class S3BlobStorageAdapter extends BlobStoragePort {
         })
     }
 
-    buildKeyFromHash(hash: string, mime: string): string {
-        const prefix = 'objects/sha256'
-        const subdir = hash.slice(0, 2)
-        let ext = ''
-        if (mime) {
-            const parts = mime.split('/')
-            if (parts[1]) {
-                ext = '.' + parts[1]
-            }
+    buildKeyFromHash(hash: string): string {
+        if (!/^[a-f0-9]{64}$/.test(hash)) {
+            throw new Error('Invalid SHA-256 hash')
         }
-        return `${prefix}/${subdir}/${hash}${ext}`
+        const prefix = 'objects/sha256/v2'
+        const subdir = hash.slice(0, 2)
+        return `${prefix}/${subdir}/${hash}`
     }
 
     async putObject(params: { key: string; body: Buffer | Readable; mime: string }): Promise<void> {
@@ -82,12 +78,11 @@ export class S3BlobStorageAdapter extends BlobStoragePort {
             return Readable.from([maybeBuffer as Buffer | Uint8Array | string])
         }
 
-        // Fallback: wrap unknown into a Readable
-        const fallback = new Readable()
-        // push accepts unknown when coerced; convert to string as last resort
-        fallback.push(typeof maybeBuffer === 'string' ? maybeBuffer : JSON.stringify(maybeBuffer))
-        fallback.push(null)
-        return fallback
+        throw new Error('Unsupported S3 object stream')
+    }
+
+    async checkReady(): Promise<void> {
+        await this.s3.send(new HeadBucketCommand({ Bucket: this.bucket }))
     }
 
     async deleteObject(key: string): Promise<void> {

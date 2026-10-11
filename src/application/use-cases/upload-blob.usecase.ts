@@ -17,33 +17,25 @@ export class UploadBlobUseCase {
         const size = file.size
         const mime = file.mimetype || 'application/octet-stream'
 
-        const existing = await this.repo.findByHashAndSize(hash, size)
-        if (existing && !existing.isDeleted()) {
-            existing.markUsed()
-            const updated = await this.repo.update(existing)
-            return {
-                deduplicated: true,
-                info: this.toDto(updated),
-            }
+        // The storage adapter builds a MIME-independent content key. Existing
+        // legacy keys stay in their rows and are never rewritten.
+        const storageKey = this.storage.buildKeyFromHash(hash, mime)
+        const reservation = await this.repo.prepareUpload(hash, size, mime, storageKey)
+        if (reservation.needsUpload) {
+            // A pending DB row exists before the S3 write. If the final DB
+            // transaction fails, another upload can retry the same key safely.
+            await this.storage.putObject({
+                key: reservation.object.storageKey,
+                body: file.buffer,
+                mime: reservation.object.mime,
+            })
         }
 
-        const storageKey = this.storage.buildKeyFromHash(hash, mime)
-
-        await this.storage.putObject({
-            key: storageKey,
-            body: file.buffer,
-            mime,
-        })
-
-        const created = await this.repo.save({
-            hash,
-            size,
-            mime,
-            storageKey,
-        })
+        // Every call creates a fresh logical handle, even for identical bytes.
+        const created = await this.repo.createLogicalBlob(hash, size, mime, reservation.needsUpload)
 
         return {
-            deduplicated: false,
+            deduplicated: !reservation.needsUpload,
             info: this.toDto(created),
         }
     }

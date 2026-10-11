@@ -7,6 +7,8 @@ export interface BlobProps {
     createdAt: Date;
     lastUsedAt: Date | null;
     deletedAt: Date | null;
+    generation?: number;
+    objectId?: string | null;
 }
 
 export class BlobEntity {
@@ -20,6 +22,8 @@ export class BlobEntity {
     get createdAt() { return this.props.createdAt }
     get lastUsedAt() { return this.props.lastUsedAt }
     get deletedAt() { return this.props.deletedAt }
+    get generation() { return this.props.generation ?? 1 }
+    get objectId() { return this.props.objectId ?? null }
 
     markUsed(now: Date = new Date()) {
         this.props.lastUsedAt = now

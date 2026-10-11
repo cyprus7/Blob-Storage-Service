@@ -79,15 +79,12 @@ while true; do
 done
 
 echo "[init-dev] Creating S3 bucket '$S3_BUCKET' (idempotent)"
-docker run --rm --network "$NETWORK" -e AWS_ACCESS_KEY_ID="$S3_ACCESS_KEY" -e AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY" amazon/aws-cli:latest s3api create-bucket --bucket "$S3_BUCKET" --endpoint-url "$S3_ENDPOINT" --region "$S3_REGION" || true
+if ! docker run --rm --network "$NETWORK" -e AWS_ACCESS_KEY_ID="$S3_ACCESS_KEY" -e AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY" amazon/aws-cli:latest s3api head-bucket --bucket "$S3_BUCKET" --endpoint-url "$S3_ENDPOINT" --region "$S3_REGION" >/dev/null 2>&1; then
+  docker run --rm --network "$NETWORK" -e AWS_ACCESS_KEY_ID="$S3_ACCESS_KEY" -e AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY" amazon/aws-cli:latest s3api create-bucket --bucket "$S3_BUCKET" --endpoint-url "$S3_ENDPOINT" --region "$S3_REGION"
+fi
 
 echo "[init-dev] Applying SQL migrations"
-if [ -f migrations/blob-service/0000_curious_piledriver.sql ]; then
-  docker exec -i "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f - < migrations/blob-service/0000_curious_piledriver.sql || true
-  echo "[init-dev] Migration applied (or already present)"
-else
-  echo "[init-dev] No migration file found at migrations/blob-service/0000_curious_piledriver.sql" >&2
-fi
+docker compose run --rm migrate
 
 echo "[init-dev] Starting blob-service"
 docker compose up -d blob-service

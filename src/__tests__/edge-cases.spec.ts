@@ -4,123 +4,69 @@ import { GetBlobContentUseCase } from '../application/use-cases/get-blob-content
 import { DeleteBlobUseCase } from '../application/use-cases/delete-blob.usecase'
 import { BlobEntity } from '../domain/blob.entity'
 
-describe('Edge cases and malformed DTOs', () => {
-    it('UploadBlobUseCase throws when repo.save returns null (malformed DTO)', async () => {
-        const buffer = Buffer.from('x')
-        const size = buffer.length
-        const mimetype = 'text/plain'
+const entity = new BlobEntity({
+    id: 'v2', hash: 'hash', size: 2, mime: 'text/plain', storageKey: 'objects/key',
+    createdAt: new Date(), lastUsedAt: null, deletedAt: null, generation: 2,
+})
 
-        const storageMock = {
-            buildKeyFromHash: jest.fn().mockReturnValue('objects/x'),
+describe('Failure paths', () => {
+    it('propagates logical handle insert failure after a successful S3 PUT', async () => {
+        const repo = {
+            prepareUpload: jest.fn().mockResolvedValue({
+                object: { storageKey: 'objects/key', mime: 'text/plain' }, needsUpload: true,
+            }),
+            createLogicalBlob: jest.fn().mockRejectedValue(new Error('insert failed')),
+        } as any
+        const storage = {
+            buildKeyFromHash: jest.fn().mockReturnValue('objects/key'),
             putObject: jest.fn().mockResolvedValue(undefined),
         } as any
-
-        const repoMock = {
-            findByHashAndSize: jest.fn().mockResolvedValue(null),
-            save: jest.fn().mockResolvedValue(null),
-        } as any
-
-        const usecase = new UploadBlobUseCase(storageMock, repoMock)
-        const file = { buffer, size, mimetype, originalname: 'x.txt' } as Express.Multer.File
-
-        await expect(usecase.execute(file)).rejects.toThrow()
-        expect(storageMock.putObject).toHaveBeenCalled()
-        expect(repoMock.save).toHaveBeenCalled()
+        await expect(new UploadBlobUseCase(storage, repo).execute({
+            buffer: Buffer.from('ok'), size: 2, mimetype: 'text/plain',
+        } as Express.Multer.File)).rejects.toThrow('insert failed')
+        expect(storage.putObject).toHaveBeenCalledTimes(1)
     })
 
-    it('UploadBlobUseCase propagates transient storage errors (no retry)', async () => {
-        const buffer = Buffer.from('y')
-        const size = buffer.length
-        const mimetype = 'text/plain'
-
-        const storageMock = {
-            buildKeyFromHash: jest.fn().mockReturnValue('objects/y'),
-            putObject: jest.fn()
-                .mockRejectedValueOnce(new Error('transient put'))
-                .mockResolvedValue(undefined),
+    it('does not create a handle when S3 PUT fails', async () => {
+        const repo = {
+            prepareUpload: jest.fn().mockResolvedValue({
+                object: { storageKey: 'objects/key', mime: 'text/plain' }, needsUpload: true,
+            }),
+            createLogicalBlob: jest.fn(),
         } as any
-
-        const repoMock = { findByHashAndSize: jest.fn().mockResolvedValue(null) } as any
-
-        const usecase = new UploadBlobUseCase(storageMock, repoMock)
-        const file = { buffer, size, mimetype, originalname: 'y.txt' } as Express.Multer.File
-
-        // current implementation does not retry, so first rejection should propagate
-        await expect(usecase.execute(file)).rejects.toThrow('transient put')
+        const storage = {
+            buildKeyFromHash: jest.fn().mockReturnValue('objects/key'),
+            putObject: jest.fn().mockRejectedValue(new Error('transient put')),
+        } as any
+        await expect(new UploadBlobUseCase(storage, repo).execute({
+            buffer: Buffer.from('ok'), size: 2, mimetype: 'text/plain',
+        } as Express.Multer.File)).rejects.toThrow('transient put')
+        expect(repo.createLogicalBlob).not.toHaveBeenCalled()
     })
 
-    it('GetBlobInfoUseCase throws when repo.update returns null (malformed)', async () => {
-        const props = {
-            id: 'edge1',
-            hash: 'he',
-            size: 1,
-            mime: 'text/plain',
-            storageKey: 'objects/e1',
-            createdAt: new Date(),
-            lastUsedAt: null,
-            deletedAt: null,
-        }
-        const entity = new BlobEntity({ ...props })
+    it('returns 404 when an active handle disappears before metadata touch', async () => {
+        const repo = { touchActive: jest.fn().mockResolvedValue(null) } as any
+        await expect(new GetBlobInfoUseCase(repo).execute(entity.id)).rejects.toThrow()
+    })
 
-        const repoMock = {
+    it('returns an opened content stream after touch', async () => {
+        const stream = Buffer.from('ok')
+        const repo = {
             findById: jest.fn().mockResolvedValue(entity),
-            update: jest.fn().mockResolvedValue(null),
+            touchActive: jest.fn().mockResolvedValue(entity),
         } as any
-
-        const usecase = new GetBlobInfoUseCase(repoMock)
-
-        await expect(usecase.execute(props.id)).rejects.toThrow()
+        const storage = { getObjectStream: jest.fn().mockResolvedValue(stream) } as any
+        const result = await new GetBlobContentUseCase(repo, storage).execute(entity.id)
+        expect(result.stream).toBe(stream)
+        expect(storage.getObjectStream.mock.invocationCallOrder[0])
+            .toBeLessThan(repo.touchActive.mock.invocationCallOrder[0])
     })
 
-    it('GetBlobContentUseCase returns non-stream objects as-is if storage returns buffer', async () => {
-        const props = {
-            id: 'edge2',
-            hash: 'hc',
-            size: 2,
-            mime: 'text/plain',
-            storageKey: 'objects/e2',
-            createdAt: new Date(),
-            lastUsedAt: null,
-            deletedAt: null,
-        }
-        const entity = new BlobEntity({ ...props })
-
-        const repoMock = {
+    it('propagates logical hard-delete database failure', async () => {
+        const repo = {
             findById: jest.fn().mockResolvedValue(entity),
-            update: jest.fn().mockResolvedValue(entity),
+            hardDeleteLogical: jest.fn().mockRejectedValue(new Error('repo delete failed')),
         } as any
-
-        const buf = Buffer.from('ok')
-        const storageMock = { getObjectStream: jest.fn().mockResolvedValue(buf) } as any
-
-        const usecase = new GetBlobContentUseCase(repoMock, storageMock)
-
-        const res = await usecase.execute(props.id)
-        expect(res.stream).toBe(buf)
-    })
-
-    it('DeleteBlobUseCase propagates repo.delete failures on hard delete', async () => {
-        const props = {
-            id: 'edge3',
-            hash: 'hd',
-            size: 3,
-            mime: 'image/png',
-            storageKey: 'objects/e3',
-            createdAt: new Date(),
-            lastUsedAt: null,
-            deletedAt: null,
-        }
-        const entity = new BlobEntity({ ...props })
-
-        const repoMock = {
-            findById: jest.fn().mockResolvedValue(entity),
-            delete: jest.fn().mockRejectedValue(new Error('repo delete failed')),
-        } as any
-
-        const storageMock = { deleteObject: jest.fn().mockResolvedValue(undefined) } as any
-
-        const usecase = new DeleteBlobUseCase(repoMock, storageMock)
-
-        await expect(usecase.execute(props.id, true)).rejects.toThrow('repo delete failed')
+        await expect(new DeleteBlobUseCase(repo).execute(entity.id, true)).rejects.toThrow('repo delete failed')
     })
 })
