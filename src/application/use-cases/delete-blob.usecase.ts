@@ -1,6 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { BlobRepository } from '../../domain/ports/blob.repository'
-import { BlobStoragePort } from '../../domain/ports/blob-storage.port'
 import { BlobInfo } from '../dto/blob-info.dto'
 import { BlobEntity } from '../../domain/blob.entity'
 
@@ -8,7 +7,6 @@ import { BlobEntity } from '../../domain/blob.entity'
 export class DeleteBlobUseCase {
     constructor(
         private readonly repo: BlobRepository,
-        private readonly storage: BlobStoragePort,
     ) {}
 
     async execute(id: string, force: boolean): Promise<BlobInfo> {
@@ -17,21 +15,24 @@ export class DeleteBlobUseCase {
             throw new NotFoundException('Blob not found')
         }
 
+        // A legacy ID may be stored by an unknown number of external records.
+        // Neither soft nor hard delete can be safe until those references are
+        // migrated to independent handles.
+        if (entity.generation !== 2) {
+            throw new ConflictException('Legacy blob references cannot be deleted')
+        }
+
         if (force) {
-            // Hard delete: delete from storage & DB
-            await this.storage.deleteObject(entity.storageKey)
-            await this.repo.delete(entity.id)
-            return this.toDto(entity)
+            // Physical S3 data is retained. A separate, audited garbage
+            // collector may remove unreferenced objects in the future.
+            const removed = await this.repo.hardDeleteLogical(id)
+            if (!removed) throw new NotFoundException('Blob not found')
+            return this.toDto(removed)
         }
 
-        if (!entity.isDeleted()) {
-            entity.softDelete()
-            const updated = await this.repo.update(entity)
-            return this.toDto(updated)
-        }
-
-        // Already soft-deleted
-        return this.toDto(entity)
+        const updated = await this.repo.softDeleteLogical(id)
+        if (!updated) throw new NotFoundException('Blob not found')
+        return this.toDto(updated)
     }
 
     private toDto(entity: BlobEntity): BlobInfo {

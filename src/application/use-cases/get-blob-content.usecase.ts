@@ -17,14 +17,22 @@ export class GetBlobContentUseCase {
         if (!entity || entity.isDeleted()) {
             throw new NotFoundException('Blob not found')
         }
-
-        entity.markUsed()
-        const updated = await this.repo.update(entity)
-
-        const stream = await this.storage.getObjectStream(updated.storageKey)
+        const stream = await this.storage.getObjectStream(entity.storageKey)
+        let touched: BlobEntity | null
+        try {
+            // Only record access after S3 has successfully opened the stream.
+            touched = await this.repo.touchActive(id)
+        } catch (error) {
+            stream.destroy()
+            throw error
+        }
+        if (!touched) {
+            stream.destroy()
+            throw new NotFoundException('Blob not found')
+        }
 
         return {
-            info: this.toDto(updated),
+            info: this.toDto(touched),
             stream,
         }
     }

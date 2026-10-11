@@ -34,27 +34,25 @@ services:
       # Uses variable substitution; ensure `PORT` is defined in your shell or in a .env file.
       - "${PORT:-3100}:${PORT:-3100}"
     depends_on:
-      - postgres
-      - minio
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
     restart: on-failure
 
   migrate:
     image: postgres:17
     env_file:
       - .env.local
+    environment:
+      MIGRATIONS_DIR: /migrations/blob-service
     volumes:
       - ./migrations:/migrations:ro
+      - ./scripts/apply-migrations.sh:/apply-migrations.sh:ro
     depends_on:
-      - postgres
-    entrypoint: ["/bin/bash", "-c"]
-    command: |
-      # wait for postgres to accept connections
-      until pg_isready -h postgres -U "$${POSTGRES_USER}"; do sleep 1; done
-      export PGPASSWORD="$${POSTGRES_PASSWORD}"
-      # Ensure target database exists (connect to 'postgres' which always exists)
-      psql -h postgres -U "$${POSTGRES_USER}" -d postgres -v ON_ERROR_STOP=1 -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '$${POSTGRES_DB}') THEN CREATE DATABASE \"$${POSTGRES_DB}\"; END IF; END $$;"
-      # Run migration against the target DB
-      psql -h postgres -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -f /migrations/blob-service/0000_curious_piledriver.sql || true
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/apply-migrations.sh"]
     restart: "no"
 
 volumes:

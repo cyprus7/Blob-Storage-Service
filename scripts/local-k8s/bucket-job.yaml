@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: blob-bucket
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      containers:
+        - name: create-bucket
+          image: __BLOB_IMAGE__
+          imagePullPolicy: Never
+          command: ["node", "-e"]
+          args:
+            - |
+              const { S3Client, CreateBucketCommand } = require('@aws-sdk/client-s3');
+              const client = new S3Client({
+                region: 'us-east-1',
+                endpoint: process.env.S3_ENDPOINT,
+                forcePathStyle: true,
+                credentials: {
+                  accessKeyId: 'blobminio',
+                  secretAccessKey: process.env.S3_SECRET_KEY,
+                },
+              });
+              client.send(new CreateBucketCommand({ Bucket: 'blobs' }))
+                .catch((error) => {
+                  if (error.name !== 'BucketAlreadyOwnedByYou') throw error;
+                });
+          env:
+            - name: S3_ENDPOINT
+              value: http://minio:9000
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: blob-smoke-secrets
+                  key: MINIO_ROOT_PASSWORD

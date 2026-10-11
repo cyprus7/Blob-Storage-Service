@@ -12,4 +12,6 @@ export abstract class BlobStoragePort {
     abstract getObjectStream(key: string): Promise<Readable>;
 
     abstract deleteObject(key: string): Promise<void>;
+
+    abstract checkReady(): Promise<void>;
 }

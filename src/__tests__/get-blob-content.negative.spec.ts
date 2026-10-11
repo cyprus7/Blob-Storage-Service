@@ -19,7 +19,7 @@ describe('GetBlobContentUseCase (negative cases)', () => {
 
         const repoMock = {
             findById: jest.fn().mockResolvedValue(entity),
-            update: jest.fn().mockResolvedValue(entity),
+            touchActive: jest.fn().mockResolvedValue(entity),
         } as any
 
         const storageMock = {
@@ -43,8 +43,7 @@ describe('GetBlobContentUseCase (negative cases)', () => {
             lastUsedAt: null,
             deletedAt: new Date(),
         }
-        const entity = new BlobEntity({ ...props })
-        const repoMock = { findById: jest.fn().mockResolvedValue(entity) } as any
+        const repoMock = { findById: jest.fn().mockResolvedValue(new BlobEntity({ ...props })) } as any
         const storageMock = { getObjectStream: jest.fn() } as any
         const usecase = new GetBlobContentUseCase(repoMock, storageMock)
 

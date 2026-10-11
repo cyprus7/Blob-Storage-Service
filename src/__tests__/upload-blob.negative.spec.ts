@@ -13,7 +13,8 @@ describe('UploadBlobUseCase (negative cases)', () => {
         } as any
 
         const repoMock = {
-            findByHashAndSize: jest.fn().mockResolvedValue(null),
+            prepareUpload: jest.fn().mockResolvedValue({ object: { storageKey: 'objects/bad', mime: mimetype }, needsUpload: true }),
+            createLogicalBlob: jest.fn(),
         } as any
 
         const usecase = new UploadBlobUseCase(storageMock, repoMock)
@@ -22,6 +23,7 @@ describe('UploadBlobUseCase (negative cases)', () => {
 
         await expect(usecase.execute(file)).rejects.toThrow('put failed')
         expect(storageMock.putObject).toHaveBeenCalled()
+        expect(repoMock.createLogicalBlob).not.toHaveBeenCalled()
     })
 
     it('propagates error when repo.save fails after putObject', async () => {
@@ -35,8 +37,8 @@ describe('UploadBlobUseCase (negative cases)', () => {
         } as any
 
         const repoMock = {
-            findByHashAndSize: jest.fn().mockResolvedValue(null),
-            save: jest.fn().mockRejectedValue(new Error('save failed')),
+            prepareUpload: jest.fn().mockResolvedValue({ object: { storageKey: 'objects/bad2', mime: mimetype }, needsUpload: true }),
+            createLogicalBlob: jest.fn().mockRejectedValue(new Error('save failed')),
         } as any
 
         const usecase = new UploadBlobUseCase(storageMock, repoMock)
@@ -44,6 +46,6 @@ describe('UploadBlobUseCase (negative cases)', () => {
 
         await expect(usecase.execute(file)).rejects.toThrow('save failed')
         expect(storageMock.putObject).toHaveBeenCalled()
-        expect(repoMock.save).toHaveBeenCalled()
+        expect(repoMock.createLogicalBlob).toHaveBeenCalled()
     })
 })
